@@ -1,0 +1,7 @@
+[
+  {"ParameterKey":"DatabaseFlavor","ParameterValue":"rds-mysql"},
+  {"ParameterKey":"DmsCapacityMode","ParameterValue":"provisioned"},
+  {"ParameterKey":"MultiAz","ParameterValue":"false"},
+  {"ParameterKey":"AppJarS3Bucket","ParameterValue":"ws-event-8bf45223-b30-us-east-1"},
+  {"ParameterKey":"AppJarS3Key","ParameterValue":"ba54703c-1a48-4497-b225-6071e1c17956/assets/workshop-app.jar"}
+]

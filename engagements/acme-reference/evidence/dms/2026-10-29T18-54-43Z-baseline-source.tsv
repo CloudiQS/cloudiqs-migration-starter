@@ -1,0 +1,15 @@
+tbl	metric	value
+customers	row_count	10000
+customers	sum_id	50005000
+customers	max_created_at	2026-04-30 22:07:17
+customers	distinct_pk	10000
+products	row_count	500
+products	sum_price	50392.36
+products	distinct_pk	500
+orders	row_count	50000
+orders	sum_total	13258320.60
+orders	max_created_at	2026-04-30 23:46:15
+orders	distinct_pk	50000
+order_items	row_count	74880
+order_items	sum_price	7672176.77
+order_items	distinct_pk	74880

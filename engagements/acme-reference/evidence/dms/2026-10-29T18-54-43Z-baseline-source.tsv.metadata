@@ -1,0 +1,3 @@
+role=source
+query_file=/workshop/ssb-migration/output/scripts/validation-queries.sql
+captured_at=2026-10-29T18:54:44Z

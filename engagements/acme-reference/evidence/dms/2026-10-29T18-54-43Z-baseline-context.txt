@@ -1,0 +1,16 @@
+captured_at=2026-10-29T18:54:43Z
+phase=baseline
+aws_region=us-east-1
+dms_task_arn=<pending Module 5 task creation — Stop 2, not yet authorized>
+source_endpoint_arn=<arn-redacted>
+target_endpoint_arn=<arn-redacted>
+source_db_host=<private-ip>
+source_db_name=orders
+source_db_secret_arn=<arn-redacted>
+target_db_host=<rds-endpoint>
+target_db_name=orders
+target_db_secret_arn=<arn-redacted>
+target_app_base_url=http://<private-ip>:8080
+rollback_owner=Applications Lead
+rollback_rto=SIMULATION ONLY — bounded by remaining time in the 4-hour cutover window (R2); no approved production RTO yet
+cdc_evidence_path=NOT PROVIDED
