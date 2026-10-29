@@ -1,0 +1,63 @@
+# BPTAO product contract - PROPOSAL, not approved.
+# Drafted by Claude from the SSB workshop method on 29 Oct 2026. Every field
+# marked DECIDE needs Steve Kodra's decision before this is used commercially.
+id: CQ-TRN-001
+name: Cloud Exit to AWS for SMB
+status: proposal
+version: 0.1.0
+bptao_pillar: Transform
+supporting_pillars: [Protect, Operate]
+owner: DECIDE  # named CloudiQS product owner
+industry: cross-industry SMB
+lob_buyer: Managing Director or CFO (cost exit), with the IT lead as technical approver
+business_problem: >-
+  Workloads running in another cloud (Azure or Google Cloud) under a renewal
+  date, with fragmented operations and rising cost.
+measurable_outcomes:
+  - Exit decision evidence ready before the source-cloud notice date
+  - Database cutover inside the customer's agreed window, from write-stop to GO or rollback
+  - Zero loss of committed records, shown by Stage-1 vs Stage-3 comparison the customer can inspect
+  - AWS run cost visible by workload before commitment
+scope:
+  standard:
+    - Discovery, requirements register and approved baseline
+    - Frozen design with ADRs per workload (MGN, DMS, DataSync, retain, retire)
+    - Database path rehearsal with captured evidence and signed go/no-go
+  configurable:
+    - source_cloud: [azure, gcp]
+    - database_targets: [rds-mysql, aurora-mysql]  # extend per proven template
+    - dms_capacity: [provisioned, serverless]
+    - availability: [single-az, multi-az]
+    - deployment_tier: [base-single-account, enhanced-control-tower]
+  excluded:
+    - Application refactoring
+    - On-premises sources (separate product)
+    - Legal, licensing or contractual advice
+per_customer_variables:  # repeatability rule: nothing outside this list changes per customer
+  - region
+  - account_structure
+  - identity_provider
+  - network_connectivity
+  - workload_inventory_and_sizes
+  - cutover_window
+  - regulatory_profile
+  - support_tier
+deployment_target: customer AWS account; IaC delivered to the customer's GitHub
+iac:
+  cloudformation: infrastructure/cloudformation/target-mysql-dms.yaml
+  terraform: DECIDE  # BPTAO requires CFN, Terraform and CDK outputs
+  cdk: DECIDE
+validation:
+  gates: .claude/rules/gates.md
+  evidence: .claude/rules/evidence.md
+  hooks: [.claude/hooks/freeze-gate.py, .claude/hooks/validate-dms-task-config.py]
+aws_programmes:  # confirm eligibility per opportunity with the programme triage skill
+  - MAP (Assess / Mobilize) where ARR thresholds are met
+  - ATX sprint tagging for migration opportunities created before 11 Dec 2026
+  - Source-cloud egress waiver check (customer applies to the source provider)
+pricing:
+  implementation: DECIDE
+  recurring_managed_service: DECIDE
+  predictable_aws_cost_method: per-workload cost allocation tags plus pre-commitment estimate
+support_model: DECIDE  # CloudiQS MSP tier after cutover
+source_method: AWS "From SSB to Migrated Workload" workshop kit (Oct 2026), adapted; SSB packs obtained per engagement from AWS Partner Central

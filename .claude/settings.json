@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./**/.env)",
+      "Read(./**/*.pem)",
+      "Bash(aws secretsmanager get-secret-value:*)",
+      "Bash(aws iam create-access-key:*)",
+      "Bash(rm -rf:*)"
+    ],
+    "ask": [
+      "Bash(aws:*)",
+      "Bash(terraform:*)",
+      "Bash(cdk:*)",
+      "Bash(scripts/create-dms-endpoints.sh:*)",
+      "Bash(git push:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/freeze-gate.py" }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          { "type": "command", "command": "python3 \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/validate-dms-task-config.py" }
+        ]
+      }
+    ]
+  }
+}

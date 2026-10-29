@@ -1,0 +1,8 @@
+CLAUDE.local.md
+.claude/settings.local.json
+.claude/worktrees/
+.env
+*.pem
+engagements/*/configs/*.env
+!engagements/*/configs/*.env.template
+.DS_Store

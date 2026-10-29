@@ -1,0 +1,23 @@
+{
+  "TargetMetadata": {
+    "TargetSchema": "",
+    "SupportLobs": true,
+    "LimitedSizeLobMode": true,
+    "LobMaxSize": 32
+  },
+  "FullLoadSettings": {
+    "TargetTablePrepMode": "TRUNCATE_BEFORE_LOAD",
+    "MaxFullLoadSubTasks": 8
+  },
+  "ValidationSettings": {
+    "EnableValidation": true,
+    "ThreadCount": 5
+  },
+  "Logging": {
+    "EnableLogging": true
+  },
+  "ErrorBehavior": {
+    "DataErrorPolicy": "LOG_ERROR",
+    "TableErrorPolicy": "SUSPEND_TABLE"
+  }
+}

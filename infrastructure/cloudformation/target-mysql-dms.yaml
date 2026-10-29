@@ -1,0 +1,329 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  CloudiQS Transform: MySQL-compatible migration target (RDS for MySQL or
+  Aurora MySQL) plus AWS DMS capacity (provisioned instance or Serverless
+  subnet group). Every value is a parameter; nothing account-specific is
+  hardcoded. Deploy only after the engagement design is frozen. Parameters
+  come from engagements/<engagement>/configs/target-params.json.
+
+Metadata:
+  cfn-lint:
+    config:
+      ignore_checks: [W3005]
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: Engagement }
+        Parameters: [EngagementId, Environment]
+      - Label: { default: Network (customer landing zone) }
+        Parameters: [VpcId, PrivateSubnetIds, AllowedClientCidr]
+      - Label: { default: ADR-1 decisions }
+        Parameters: [DatabaseFlavor, DmsCapacityMode, MultiAz]
+      - Label: { default: Sizing and protection }
+        Parameters: [DbInstanceClass, DbAllocatedStorageGiB, DbName, BackupRetentionDays, DeletionProtection, DmsInstanceClass, DmsAllocatedStorageGiB, CreateDmsRoles]
+
+Parameters:
+  EngagementId:
+    Type: String
+    AllowedPattern: "^[a-z0-9][a-z0-9-]{1,30}$"
+    Description: Short engagement slug, used in names and tags (for example acme-exit)
+  Environment:
+    Type: String
+    AllowedValues: [lab, rehearsal, production]
+    Description: Lab and rehearsal stacks may be torn down; production keeps protection on
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: At least two private subnets in different Availability Zones
+  AllowedClientCidr:
+    Type: String
+    AllowedPattern: "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+    Description: CIDR allowed to reach the database for validation queries and the application (never 0.0.0.0/0)
+  DatabaseFlavor:
+    Type: String
+    AllowedValues: [aurora-mysql, rds-mysql]
+  DmsCapacityMode:
+    Type: String
+    AllowedValues: [provisioned, serverless]
+    Description: provisioned creates a replication instance now; serverless creates only the subnet group
+  MultiAz:
+    Type: String
+    AllowedValues: ["true", "false"]
+  DbInstanceClass:
+    Type: String
+    AllowedPattern: "^db\\.[a-z0-9]+\\.[a-z0-9]+$"
+  DbAllocatedStorageGiB:
+    Type: Number
+    MinValue: 20
+    Description: RDS for MySQL only; Aurora storage grows automatically
+  DbName:
+    Type: String
+    AllowedPattern: "^[A-Za-z][A-Za-z0-9_]{0,63}$"
+  BackupRetentionDays:
+    Type: Number
+    MinValue: 1
+    MaxValue: 35
+  DeletionProtection:
+    Type: String
+    AllowedValues: ["true", "false"]
+  DmsInstanceClass:
+    Type: String
+    AllowedPattern: "^dms\\.[a-z0-9]+\\.[a-z0-9]+$"
+    Description: Used only when DmsCapacityMode is provisioned
+  DmsAllocatedStorageGiB:
+    Type: Number
+    MinValue: 5
+  CreateDmsRoles:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Description: Create the account-global dms-vpc-role and dms-cloudwatch-logs-role. Set false if they already exist.
+
+Conditions:
+  IsAurora: !Equals [!Ref DatabaseFlavor, aurora-mysql]
+  IsRds: !Equals [!Ref DatabaseFlavor, rds-mysql]
+  IsProvisionedDms: !Equals [!Ref DmsCapacityMode, provisioned]
+  IsMultiAz: !Equals [!Ref MultiAz, "true"]
+  IsAuroraMultiAz: !And [!Condition IsAurora, !Condition IsMultiAz]
+  MakeDmsRoles: !Equals [!Ref CreateDmsRoles, "true"]
+  IsProtected: !Equals [!Ref DeletionProtection, "true"]
+
+Resources:
+
+  # ---------------- Network ----------------
+
+  DbSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub "${EngagementId} migration target database subnets"
+      SubnetIds: !Ref PrivateSubnetIds
+      Tags:
+        - { Key: cq:engagement, Value: !Ref EngagementId }
+        - { Key: cq:environment, Value: !Ref Environment }
+
+  DmsSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${EngagementId} DMS replication"
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+          Description: MySQL to source (via VPN/Direct Connect/peering) and target
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: AWS service endpoints
+      Tags:
+        - { Key: cq:engagement, Value: !Ref EngagementId }
+
+  DbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "${EngagementId} migration target database"
+      VpcId: !Ref VpcId
+      Tags:
+        - { Key: cq:engagement, Value: !Ref EngagementId }
+
+  DbIngressFromDms:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref DbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      SourceSecurityGroupId: !Ref DmsSecurityGroup
+      Description: DMS writes
+
+  DbIngressFromClients:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref DbSecurityGroup
+      IpProtocol: tcp
+      FromPort: 3306
+      ToPort: 3306
+      CidrIp: !Ref AllowedClientCidr
+      Description: Application and validation queries
+
+  # ---------------- Credentials ----------------
+
+  DbMasterSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub "cq/${EngagementId}/${Environment}/target-db-admin"
+      Description: !Sub "${EngagementId} migration target database admin credentials"
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "cqadmin"}'
+        GenerateStringKey: password
+        PasswordLength: 32
+        ExcludePunctuation: true
+      Tags:
+        - { Key: cq:engagement, Value: !Ref EngagementId }
+
+  AuroraSecretAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Condition: IsAurora
+    Properties:
+      SecretId: !Ref DbMasterSecret
+      TargetId: !Ref AuroraCluster
+      TargetType: AWS::RDS::DBCluster
+
+  RdsSecretAttachment:
+    Type: AWS::SecretsManager::SecretTargetAttachment
+    Condition: IsRds
+    Properties:
+      SecretId: !Ref DbMasterSecret
+      TargetId: !Ref RdsInstance
+      TargetType: AWS::RDS::DBInstance
+
+  # ---------------- Database target (ADR-1 flavour) ----------------
+
+  AuroraCluster:
+    Type: AWS::RDS::DBCluster
+    Condition: IsAurora
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: aurora-mysql
+      DatabaseName: !Ref DbName
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VpcSecurityGroupIds: [!Ref DbSecurityGroup]
+      StorageEncrypted: true
+      BackupRetentionPeriod: !Ref BackupRetentionDays
+      DeletionProtection: !If [IsProtected, true, false]
+      CopyTagsToSnapshot: true
+      EnableCloudwatchLogsExports: [error, slowquery]
+      Tags:
+        - { Key: cq:engagement, Value: !Ref EngagementId }
+        - { Key: cq:environment, Value: !Ref Environment }
+
+  AuroraInstance:
+    Type: AWS::RDS::DBInstance
+    Condition: IsAurora
+    Properties:
+      Engine: aurora-mysql
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: !Ref DbInstanceClass
+      PubliclyAccessible: false
+      AutoMinorVersionUpgrade: true
+
+  AuroraInstanceStandby:
+    Type: AWS::RDS::DBInstance
+    Condition: IsAuroraMultiAz
+    Properties:
+      Engine: aurora-mysql
+      DBClusterIdentifier: !Ref AuroraCluster
+      DBInstanceClass: !Ref DbInstanceClass
+      PubliclyAccessible: false
+      AutoMinorVersionUpgrade: true
+
+  RdsInstance:
+    Type: AWS::RDS::DBInstance
+    Condition: IsRds
+    DeletionPolicy: Snapshot
+    UpdateReplacePolicy: Snapshot
+    Properties:
+      Engine: mysql
+      DBName: !Ref DbName
+      DBInstanceClass: !Ref DbInstanceClass
+      AllocatedStorage: !Ref DbAllocatedStorageGiB
+      StorageType: gp3
+      MultiAZ: !If [IsMultiAz, true, false]
+      MasterUsername: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:username}}"
+      MasterUserPassword: !Sub "{{resolve:secretsmanager:${DbMasterSecret}:SecretString:password}}"
+      DBSubnetGroupName: !Ref DbSubnetGroup
+      VPCSecurityGroups: [!Ref DbSecurityGroup]
+      StorageEncrypted: true
+      PubliclyAccessible: false
+      BackupRetentionPeriod: !Ref BackupRetentionDays
+      DeletionProtection: !If [IsProtected, true, false]
+      CopyTagsToSnapshot: true
+      AutoMinorVersionUpgrade: true
+      EnableCloudwatchLogsExports: [error, slowquery]
+      Tags:
+        - { Key: cq:engagement, Value: !Ref EngagementId }
+        - { Key: cq:environment, Value: !Ref Environment }
+
+  # ---------------- DMS capacity (ADR-1 mode) ----------------
+
+  DmsVpcRole:
+    Type: AWS::IAM::Role
+    Condition: MakeDmsRoles
+    Properties:
+      RoleName: dms-vpc-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: dms.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonDMSVPCManagementRole"
+
+  DmsCloudWatchLogsRole:
+    Type: AWS::IAM::Role
+    Condition: MakeDmsRoles
+    Properties:
+      RoleName: dms-cloudwatch-logs-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: dms.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AmazonDMSCloudWatchLogsRole"
+
+  # The tag values reference the roles when this stack creates them, which
+  # makes CloudFormation create the account-global roles before DMS needs them.
+  DmsSubnetGroup:
+    Type: AWS::DMS::ReplicationSubnetGroup
+    Properties:
+      ReplicationSubnetGroupIdentifier: !Sub "${EngagementId}-${Environment}-dms"
+      ReplicationSubnetGroupDescription: !Sub "${EngagementId} replication subnets"
+      SubnetIds: !Ref PrivateSubnetIds
+      Tags:
+        - { Key: cq:engagement, Value: !Ref EngagementId }
+        - { Key: cq:dms-vpc-role, Value: !If [MakeDmsRoles, !Ref DmsVpcRole, pre-existing] }
+        - { Key: cq:dms-logs-role, Value: !If [MakeDmsRoles, !Ref DmsCloudWatchLogsRole, pre-existing] }
+
+  ReplicationInstance:
+    Type: AWS::DMS::ReplicationInstance
+    Condition: IsProvisionedDms
+    Properties:
+      ReplicationInstanceIdentifier: !Sub "${EngagementId}-${Environment}-dms"
+      ReplicationInstanceClass: !Ref DmsInstanceClass
+      AllocatedStorage: !Ref DmsAllocatedStorageGiB
+      PubliclyAccessible: false
+      MultiAZ: !If [IsMultiAz, true, false]
+      ReplicationSubnetGroupIdentifier: !Ref DmsSubnetGroup
+      VpcSecurityGroupIds: [!Ref DmsSecurityGroup]
+      Tags:
+        - { Key: cq:engagement, Value: !Ref EngagementId }
+        - { Key: cq:environment, Value: !Ref Environment }
+
+Outputs:
+  DatabaseFlavorChosen:
+    Value: !Ref DatabaseFlavor
+  DmsCapacityModeChosen:
+    Value: !Ref DmsCapacityMode
+  MultiAzChosen:
+    Value: !Ref MultiAz
+  DbEndpoint:
+    Value: !If [IsAurora, !GetAtt AuroraCluster.Endpoint.Address, !GetAtt RdsInstance.Endpoint.Address]
+  DbPort:
+    Value: !If [IsAurora, !GetAtt AuroraCluster.Endpoint.Port, !GetAtt RdsInstance.Endpoint.Port]
+  DbName:
+    Value: !Ref DbName
+  DbSecretArn:
+    Value: !Ref DbMasterSecret
+  DmsSubnetGroupId:
+    Value: !Ref DmsSubnetGroup
+  DmsSecurityGroupId:
+    Value: !Ref DmsSecurityGroup
+  DmsReplicationInstanceArn:
+    Value: !If [IsProvisionedDms, !Ref ReplicationInstance, "None"]

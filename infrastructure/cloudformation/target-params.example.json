@@ -1,0 +1,18 @@
+[
+  { "ParameterKey": "EngagementId", "ParameterValue": "<engagement>" },
+  { "ParameterKey": "Environment", "ParameterValue": "rehearsal" },
+  { "ParameterKey": "VpcId", "ParameterValue": "<vpc-id>" },
+  { "ParameterKey": "PrivateSubnetIds", "ParameterValue": "<subnet-a>,<subnet-b>" },
+  { "ParameterKey": "AllowedClientCidr", "ParameterValue": "<cidr>" },
+  { "ParameterKey": "DatabaseFlavor", "ParameterValue": "<rds-mysql|aurora-mysql from frozen ADR-1>" },
+  { "ParameterKey": "DmsCapacityMode", "ParameterValue": "<provisioned|serverless from frozen ADR-1>" },
+  { "ParameterKey": "MultiAz", "ParameterValue": "<true|false from frozen ADR-1>" },
+  { "ParameterKey": "DbInstanceClass", "ParameterValue": "<db class>" },
+  { "ParameterKey": "DbAllocatedStorageGiB", "ParameterValue": "<GiB>" },
+  { "ParameterKey": "DbName", "ParameterValue": "<database>" },
+  { "ParameterKey": "BackupRetentionDays", "ParameterValue": "<days>" },
+  { "ParameterKey": "DeletionProtection", "ParameterValue": "<true for production>" },
+  { "ParameterKey": "DmsInstanceClass", "ParameterValue": "<dms class>" },
+  { "ParameterKey": "DmsAllocatedStorageGiB", "ParameterValue": "<GiB>" },
+  { "ParameterKey": "CreateDmsRoles", "ParameterValue": "<false if dms-vpc-role already exists>" }
+]
